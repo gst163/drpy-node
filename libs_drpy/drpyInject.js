@@ -40,24 +40,31 @@ function localSet(storage, key, value) {
     fs.writeFileSync('local/js_' + storage, JSON.stringify(confs[storage]));
 }
 
+function localDelete(storage, key) {
+    initLocalStorage(storage);
+    delete confs[storage][key];
+    fs.writeFileSync('local/js_' + storage, JSON.stringify(confs[storage]));
+}
+
 async function request(url, opt = {}) {
     try {
-        var data = opt ? opt.data || null : null;
+        let _data = opt ? opt.data || null : null;
+        let body = opt ? opt.body || '' : '';
         var postType = opt ? opt.postType || null : null;
         var returnBuffer = opt ? opt.buffer || 0 : 0;
         var timeout = opt ? opt.timeout || 5000 : 5000;
         var redirect = (opt ? opt.redirect || 1 : 1) == 1;
-
+        _data = body || _data;
         var headers = opt ? opt.headers || {} : {};
         if (postType === 'form') {
             headers['Content-Type'] = 'application/x-www-form-urlencoded';
 
-            if (data != null) {
-                data = qs.stringify(data, {encode: false});
+            if (_data != null) {
+                _data = qs.stringify(data, {encode: false});
             }
         } else if (postType === 'form-data') {
             headers['Content-Type'] = 'multipart/form-data';
-            data = toFormData(data);
+            _data = toFormData(data);
         }
         let respType = returnBuffer === 1 || returnBuffer === 2 ? 'arraybuffer' : undefined;
         // const agent = tunnel.httpsOverHttp({
@@ -75,19 +82,17 @@ async function request(url, opt = {}) {
         } else {
             agent = https.Agent({rejectUnauthorized: false,})
         }
-        console.log(`request:${url} headers:${JSON.stringify(headers)}`);
+        console.log(`request:${url} headers:${JSON.stringify(headers)} data:${JSON.stringify(_data)}`);
         var resp = await axios(url, {
             responseType: respType,
             method: opt ? opt.method || 'get' : 'get',
             headers: headers,
-            data: data,
+            data: _data,
             timeout: timeout,
             maxRedirects: !redirect ? 0 : null,
             httpsAgent: agent
-
         });
-        var data = resp.data;
-
+        let data = resp.data;
         var resHeader = {};
         for (const hks of resp.headers) {
             var v = hks[1];
@@ -101,7 +106,7 @@ async function request(url, opt = {}) {
         } else if (returnBuffer == 1) {
             return {code: resp.status, headers: resHeader, content: data};
         } else if (returnBuffer == 2) {
-            return {code: resp.status, headers: resHeader, content: data.toString('base64')};
+            return {code: resp.status, headers: resHeader, content: Buffer.from(data).toString('base64')};
         } else if (returnBuffer == 3) {
             var stream = opt.stream;
             if (stream['onResp']) await stream['onResp']({code: resp.status, headers: resHeader});
@@ -117,9 +122,11 @@ async function request(url, opt = {}) {
             }
             return 'stream...';
         }
+        // console.log('返回的data:', data);
         return {code: resp.status, headers: resHeader, content: data};
     } catch (error) {
         resp = error.response
+        console.log(`req error: ${error.message}`);
         try {
             return {code: resp.status, headers: resp.headers, content: JSON.stringify(resp.data)};
         } catch (err) {
@@ -143,6 +150,11 @@ function base64DecodeBuf(text) {
 
 function base64Decode(text) {
     return base64DecodeBuf(text).toString('utf8');
+}
+
+function responseBase64(data) {
+    const buffer = Buffer.from(data, 'binary');
+    return buffer.toString('base64');
 }
 
 function md5(text) {
@@ -279,11 +291,13 @@ function randStr(len, withNum) {
 }
 
 globalThis.local = {
-    get: async function (storage, key) {
+    get: function (storage, key) {
         return localGet(storage, key);
-    }, set: async function (storage, key, val) {
+    }, set: function (storage, key, val) {
         localSet(storage, key, val);
-    },
+    }, delete: function (storage, key) {
+        localDelete(storage, key);
+    }
 };
 
 globalThis.md5X = md5;
@@ -292,6 +306,7 @@ globalThis.aesX = aes;
 globalThis.desX = des;
 
 globalThis.req = request;
+globalThis.responseBase64 = responseBase64;
 
 
 /**
@@ -551,5 +566,6 @@ globalThis.pjfa = (html, parse) => {
 globalThis.log = console.log;
 globalThis.print = console.log;
 globalThis.jsonpath = jsonpath;
+globalThis.jsoup = jsoup;
 
 export default {};
